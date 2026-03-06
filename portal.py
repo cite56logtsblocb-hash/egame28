@@ -3,19 +3,21 @@ import pandas as pd
 from google.cloud import firestore
 from datetime import datetime
 import calendar
+import json
 
-# إعداد الصفحة
-st.set_page_config(page_title="حي 56 مسكن بن سونة - Bloc B", page_icon="🏢")
-
-# --- الاتصال بـ Firebase ---
+# الاتصال الآمن بـ Firebase
 if 'db' not in st.session_state:
     try:
-        st.session_state.db = firestore.Client.from_service_account_json("firebase_key.json")
+        # قراءة المفتاح من Secrets
+        key_dict = json.loads(st.secrets["firebase_key"])
+        st.session_state.db = firestore.Client.from_service_account_info(key_dict)
     except Exception as e:
-        st.error("خطأ في الاتصال بقاعدة البيانات")
+        st.error(f"❌ فشل الاتصال: {e}")
         st.stop()
 
 db = st.session_state.db
+# إعداد الصفحة
+st.set_page_config(page_title="حي 56 مسكن بن سونة - Bloc B", page_icon="🏢")
 
 # --- دالة جلب البيانات ---
 @st.cache_data(ttl=5)
@@ -103,3 +105,4 @@ if not df_hab.empty:
         st.write("الرجاء اختيار سكنك من القائمة أعلاه.")
 else:
     st.warning("جاري تحميل البيانات...")
+
