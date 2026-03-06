@@ -45,7 +45,7 @@ def get_last_day_paid(total_amount):
     last_day = calendar.monthrange(year, month)[1]
     return f"{last_day:02d}/{month:02d}/{year}"
 
-st.title("🏢"حي 56 مسكن بن سونة - Bloc B"")
+st.title("🏢 حي 56 مسكن بن سونة - Bloc B")
 
 if not df_hab.empty:
     floors = {
@@ -103,5 +103,6 @@ if not df_hab.empty:
         st.write("الرجاء اختيار سكنك من القائمة أعلاه.")
 else:
     st.warning("جاري تحميل البيانات...")
+
 
 
