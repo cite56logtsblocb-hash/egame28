@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from google.cloud import firestore
 from datetime import datetime
+import json
 import calendar
 
 # إعداد الصفحة
@@ -113,3 +114,4 @@ if not df_hab.empty:
         st.write("الرجاء اختيار شقتك من القائمة أعلاه.")
 else:
     st.warning("جاري تحميل البيانات...")
+
