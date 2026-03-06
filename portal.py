@@ -57,7 +57,7 @@ def load_portal_data():
 df_hab, df_cont = load_portal_data()
 
 # 4. واجهة المستخدم
-st.title("🏢 بوابة سكان عمارات سعدادو")
+st.title("🏢 Portail Résidents - Bloc B")
 st.markdown("---")
 
 if not df_hab.empty:
@@ -123,3 +123,4 @@ if not df_hab.empty:
             st.error(f"حدث خطأ في عرض البيانات: {e}")
 else:
     st.warning("جاري جلب البيانات... تأكد من الاتصال بالإنترنت.")
+
