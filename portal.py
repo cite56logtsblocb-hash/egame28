@@ -16,8 +16,6 @@ if 'db' not in st.session_state:
         st.stop()
 
 db = st.session_state.db
-# إعداد الصفحة
-st.set_page_config(page_title="حي 56 مسكن بن سونة - Bloc B", page_icon="🏢")
 
 # --- دالة جلب البيانات ---
 @st.cache_data(ttl=5)
@@ -47,7 +45,7 @@ def get_last_day_paid(total_amount):
     last_day = calendar.monthrange(year, month)[1]
     return f"{last_day:02d}/{month:02d}/{year}"
 
-st.title("🏢 بوابة سكان إقامة 28")
+st.title("🏢"حي 56 مسكن بن سونة - Bloc B"")
 
 if not df_hab.empty:
     floors = {
@@ -105,4 +103,5 @@ if not df_hab.empty:
         st.write("الرجاء اختيار سكنك من القائمة أعلاه.")
 else:
     st.warning("جاري تحميل البيانات...")
+
 
