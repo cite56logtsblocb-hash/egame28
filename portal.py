@@ -43,7 +43,7 @@ def load_data():
 df_hab, df_cont = load_data()
 
 # 4. واجهة المستخدم
-st.title("🏢 بوابة سكان عمارات سعدادو")
+st.title("🏢 Portail Bloc B")
 st.markdown("---")
 
 if not df_hab.empty:
@@ -81,3 +81,4 @@ if not df_hab.empty:
             st.divider()
             st.subheader("📋 آخر عمليات الدفع")
             st.table(apt_pays[['Date', 'Montant']].sort_values('Date', ascending=False).head(5))
+
