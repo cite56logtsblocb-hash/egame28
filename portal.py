@@ -3,16 +3,16 @@ import pandas as pd
 from google.cloud import firestore
 from datetime import datetime
 import calendar
-import json
 
-# الاتصال الآمن بـ Firebase
+# إعداد الصفحة
+st.set_page_config(page_title="إقامة 28 - Bloc B", page_icon="🏢")
+
+# --- الاتصال بـ Firebase ---
 if 'db' not in st.session_state:
     try:
-        # قراءة المفتاح من Secrets
-        key_dict = json.loads(st.secrets["firebase_key"])
-        st.session_state.db = firestore.Client.from_service_account_info(key_dict)
+        st.session_state.db = firestore.Client.from_service_account_json("firebase_key.json")
     except Exception as e:
-        st.error(f"❌ فشل الاتصال: {e}")
+        st.error("خطأ في الاتصال بقاعدة البيانات")
         st.stop()
 
 db = st.session_state.db
@@ -22,8 +22,18 @@ db = st.session_state.db
 def load_portal_data():
     hab_docs = db.collection("habitants").stream()
     df_hab = pd.DataFrame([d.to_dict() for d in hab_docs])
-    cont_docs = db.collection("cotisations").stream()
+    cont_docs = (
+        db.collection("cotisations")
+        .order_by("Timestamp", direction=firestore.Query.DESCENDING)
+        .stream()
+    )
     df_cont = pd.DataFrame([d.to_dict() for d in cont_docs])
+    if "Appart" in df_hab.columns:
+        df_hab["Appart"] = pd.to_numeric(df_hab["Appart"], errors="coerce").astype("Int64")
+    if "Appart" in df_cont.columns:
+        df_cont["Appart"] = pd.to_numeric(df_cont["Appart"], errors="coerce").astype("Int64")
+    if "Montant" in df_cont.columns:
+        df_cont["Montant"] = pd.to_numeric(df_cont["Montant"], errors="coerce").fillna(0)
     return df_hab, df_cont
 
 df_hab, df_cont = load_portal_data()
@@ -45,7 +55,7 @@ def get_last_day_paid(total_amount):
     last_day = calendar.monthrange(year, month)[1]
     return f"{last_day:02d}/{month:02d}/{year}"
 
-st.title("🏢 حي 56 مسكن بن سونة - Bloc B")
+st.title("🏢 بوابة سكان إقامة 28")
 
 if not df_hab.empty:
     floors = {
@@ -55,22 +65,22 @@ if not df_hab.empty:
         "الطابق الرابع": [29, 30, 31, 32],
         "الطابق الخامس": [33, 34, 35, 36],
         "الطابق السادس": [37, 38, 39, 40],
-        "الطابق السابع": [41, 42, 43, 44]
+        "الطابق السابع": [41, 42, 43, 44],
     }
 
-    display_options = ["-- اختر رقم السكن --"]
+    display_options = ["-- اختر رقم الشقة --"]
     for floor_name, apts in floors.items():
         for a in apts:
-            display_options.append(f"{floor_name} - سكن رقم {a}")
+            display_options.append(f"{floor_name} - شقة رقم {a}")
 
-    choice = st.selectbox("🏠 الرجاء تحديد سكنك:", display_options)
+    choice = st.selectbox("🏠 الرجاء تحديد شقتك:", display_options)
 
-    if choice != "-- اختر رقم السكن --":
+    if choice != "-- اختر رقم الشقة --":
         selected_apt = int(choice.split(" ")[-1])
         
         resident_info = df_hab[df_hab['Appart'] == selected_apt]
         if not resident_info.empty:
-            st.info(f"👤 السيد(ة): **{resident_info.iloc[0]['Nom']}**")
+            st.info(f"👤 الساكن: **{resident_info.iloc[0]['Nom']}**")
 
         apt_payments = df_cont[df_cont['Appart'] == selected_apt] if not df_cont.empty else pd.DataFrame()
         total_paid = apt_payments['Montant'].sum() if not apt_payments.empty else 0
@@ -92,7 +102,7 @@ if not df_hab.empty:
             st.error(f"⚠️ الدين المتبقي لليوم: {dette:,.0f} دج")
         else:
             if not expiry_date:
-                 st.warning("لم يتم دفع أي مبلغ بعد.")
+                 st.warning("لم يتم تسجيل أي مبالغ بعد.")
 
         st.divider()
         st.subheader("📋 سجل آخر الدفعات:")
@@ -100,9 +110,6 @@ if not df_hab.empty:
             display_df = apt_payments[['Date', 'Montant']].sort_values('Date', ascending=False)
             st.table(display_df.head(5))
     else:
-        st.write("الرجاء اختيار سكنك من القائمة أعلاه.")
+        st.write("الرجاء اختيار شقتك من القائمة أعلاه.")
 else:
     st.warning("جاري تحميل البيانات...")
-
-
-
