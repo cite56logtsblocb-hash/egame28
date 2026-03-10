@@ -4,3 +4,5 @@ firebase-admin
 google-cloud-firestore
 arabic-reshaper
 python-bidi
+python-dateutil
+requests
