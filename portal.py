@@ -70,7 +70,7 @@ if phone_input:
 
         # --- زر تفعيل التلغرام الشخصي ---
         with st.expander("🔔 تفعيل التنبيهات على هاتفك"):
-            bot_username = "اسم_بوتك_بدون_@" 
+            bot_username = "bloc_b_notifier_bot" 
             telegram_link = f"https://t.me/{bot_username}?start={selected_apt}"
             st.write("اضغط على الزر أدناه ليقوم البوت بإرسال إشعارات الدفع لك مباشرة.")
             st.link_button("تفعيل إشعارات تلغرام", telegram_link)
@@ -101,4 +101,5 @@ if phone_input:
 
 else:
     st.info("💡 أدخل رقم هاتفك المكون من 10 أرقام للبدء.")
+
 
