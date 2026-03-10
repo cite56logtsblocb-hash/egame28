@@ -53,7 +53,7 @@ phone_input = st.text_input("رقم الهاتف:", placeholder="0XXXXXXXXX")
 if phone_input:
     # البحث عن الساكن الذي يملك هذا الرقم
     # ملاحظة: تأكد أن رقم الهاتف في Firestore مخزن كنص (String)
-    user_row = df_hab[df_hab['Phone'].astype(str).str.strip() == phone_input.strip()]
+    user_row = df_hab[df_hab['Tel'].astype(str).str.strip() == phone_input.strip()]
 
     if not user_row.empty:
         res_info = user_row.iloc[0]
@@ -101,3 +101,4 @@ if phone_input:
 
 else:
     st.info("💡 أدخل رقم هاتفك المكون من 10 أرقام للبدء.")
+
