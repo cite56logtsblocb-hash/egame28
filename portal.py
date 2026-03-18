@@ -23,7 +23,7 @@ if 'db' not in st.session_state:
 
 db = st.session_state.db
 
-# دالة إرسال آمنة للأدمن والساكن
+# دالة إرسال آمنة
 def safe_send(chat_id, message):
     if not chat_id: return False
     try:
@@ -40,7 +40,7 @@ def run_bot():
             apt_num = args[1]
             try:
                 db.collection("habitants").document(str(apt_num)).update({"telegram_id": str(message.chat.id)})
-                safe_send(message.chat.id, f"✅ **تم الربط بنجاح!**\nمرحباً بك في شقة {apt_num}. ستصلك الإشعارات هنا.")
+                safe_send(message.chat.id, f"✅ **تم الربط بنجاح!**\nمرحباً بك في شقة {apt_num}. ستصلك التنبيهات هنا.")
                 if ADMIN_ID:
                     safe_send(ADMIN_ID, f"🔔 **ربط جديد:** الشقة {apt_num} قامت بتفعيل التلغرام.")
             except: pass
@@ -51,7 +51,7 @@ if 'bot_thread' not in st.session_state:
     threading.Thread(target=run_bot, daemon=True).start()
     st.session_state.bot_thread = True
 
-# --- 3. واجهة بوابة السكان ---
+# --- 3. واجهة البوابة ---
 st.set_page_config(page_title="Portal Bloc B", page_icon="🏢")
 st.title("🏢 بوابة سكان Bloc B")
 
@@ -68,23 +68,29 @@ if phone:
         name = res.get('Nom', 'جارنا العزيز')
         tg_id = res.get('telegram_id')
 
-        # إشعار دخول للأدمن (مرة واحدة)
+        # إشعار دخول للأدمن
         if 'admin_notified' not in st.session_state:
             if ADMIN_ID: safe_send(ADMIN_ID, f"👤 **دخول:** {name} (شقة {apt}) يتصفح البوابة الآن.")
             st.session_state.admin_notified = True
 
         st.success(f"أهلاً بك سيد: {name} (شقة {apt})")
 
-        # --- 4. حالة الربط وزر التفعيل ---
-        st.subheader("🔔 حالة التنبيهات")
-        if not tg_id or str(tg_id).lower() in ["none", ""]:
-            st.warning("⚠️ حسابك غير مربوط بتلغرام. لن تصلك إشعارات الدفع.")
+        # --- 4. الجزء الذي طلبته: زر الربط وحالة الـ ID ---
+        st.subheader("🔔 خدمة التنبيهات")
+        
+        # التأكد إذا كان الـ ID موجود أو فارغ
+        if not tg_id or str(tg_id).strip() in ["", "None", "nan"]:
+            st.warning("⚠️ حسابك غير مرتبط بتطبيق التلغرام.")
             try:
-                bot_user = bot.get_me().username
-                st.link_button("🚀 تفعيل التنبيهات الآن", f"https://t.me/{bot_user}?start={apt}")
-            except: st.error("البوت غير متاح حالياً.")
+                bot_username = bot.get_me().username
+                # زر الربط السحري
+                st.link_button("🚀 ربط حسابي وتفعيل التنبيهات", f"https://t.me/{bot_username}?start={apt}")
+                st.info("💡 بعد الضغط، اختر 'Start' في تلغرام ليتم تفعيل حسابك آلياً.")
+            except:
+                st.error("فشل الاتصال بالبوت، يرجى المحاولة لاحقاً.")
         else:
-            st.info(f"✅ خدمة التنبيهات مفعلة على حسابك (ID: {tg_id})")
+            # إذا كان الـ ID موجود
+            st.success(f"✅ حسابك مرتبط بالتطبيق بنجاح (المعرف: {tg_id})")
 
         # --- 5. المالية والإنذارات ---
         st.divider()
@@ -100,20 +106,20 @@ if phone:
         col1.metric("مسوى إلى غاية", valid_date.strftime('%d/%m/%Y'))
         col2.metric("إجمالي الدفع", f"{total:,.0f} DA")
 
-        # إرسال التنبيهات (مرة واحدة في الجلسة)
+        # إرسال التنبيهات آلياً
         if tg_id and datetime.now() > valid_date and 'alert_sent' not in st.session_state:
             if months_late >= 2:
                 warn_msg = (f"🚨 **إنذار نهائي - شقة {apt}**\n\nلديكم تأخر {months_late} أشهر.\n"
                             f"في حالة عدم التسوية خلال 48 ساعة، سيتم فصل مفاتيحكم آلياً.")
                 if safe_send(tg_id, warn_msg):
-                    if ADMIN_ID: safe_send(ADMIN_ID, f"📢 **إنذار قطع مرسل:** شقة {apt} متأخرة بـ {months_late} شهر.")
+                    if ADMIN_ID: safe_send(ADMIN_ID, f"📢 **إنذار قطع:** شقة {apt} متأخرة بـ {months_late} شهر.")
                     def cutoff(): safe_send(tg_id, f"🚫 **تنبيه:** انتهت المهلة، تم فصل مفاتيح الشقة {apt}.")
                     threading.Timer(172800, cutoff).start()
             
             elif months_late >= 1:
                 warn_msg = f"⚠️ **تذكير - شقة {apt}**\n\nتأخرتم بشهر واحد. يرجى تسوية الوضعية."
                 if safe_send(tg_id, warn_msg):
-                    if ADMIN_ID: safe_send(ADMIN_ID, f"📢 **تذكير مرسل:** شقة {apt} متأخرة بشهر.")
+                    if ADMIN_ID: safe_send(ADMIN_ID, f"📢 **تذكير:** شقة {apt} متأخرة بشهر.")
             
             st.session_state.alert_sent = True
 
