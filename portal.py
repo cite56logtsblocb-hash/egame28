@@ -6,7 +6,7 @@ import threading
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
-# --- 1. الإعدادات ---
+# --- 1. الإعدادات والاتصال ---
 TOKEN = st.secrets["TELEGRAM_TOKEN"]
 ADMIN_ID = st.secrets.get("CHAT_ID")
 bot = telebot.TeleBot(TOKEN)
@@ -23,14 +23,13 @@ if 'db' not in st.session_state:
 
 db = st.session_state.db
 
-# دالة آمنة لإرسال الرسائل لتجنب الـ Crash
+# دالة إرسال آمنة للأدمن والساكن
 def safe_send(chat_id, message):
+    if not chat_id: return False
     try:
         bot.send_message(chat_id, message, parse_mode="Markdown")
         return True
-    except Exception as e:
-        print(f"فشل الإرسال إلى {chat_id}: {e}")
-        return False
+    except: return False
 
 # --- 2. محرك البوت (الخلفية) ---
 def run_bot():
@@ -41,9 +40,9 @@ def run_bot():
             apt_num = args[1]
             try:
                 db.collection("habitants").document(str(apt_num)).update({"telegram_id": str(message.chat.id)})
-                safe_send(message.chat.id, f"✅ تم ربط الشقة {apt_num} بنجاح! ستصلك التنبيهات هنا.")
+                safe_send(message.chat.id, f"✅ **تم الربط بنجاح!**\nمرحباً بك في شقة {apt_num}. ستصلك الإشعارات هنا.")
                 if ADMIN_ID:
-                    safe_send(ADMIN_ID, f"🔔 ربط جديد: الشقة {apt_num} فعلت التلغرام.")
+                    safe_send(ADMIN_ID, f"🔔 **ربط جديد:** الشقة {apt_num} قامت بتفعيل التلغرام.")
             except: pass
     bot.remove_webhook()
     bot.polling(none_stop=True)
@@ -69,15 +68,26 @@ if phone:
         name = res.get('Nom', 'جارنا العزيز')
         tg_id = res.get('telegram_id')
 
-        # إشعار دخول للأدمن
+        # إشعار دخول للأدمن (مرة واحدة)
         if 'admin_notified' not in st.session_state:
-            if ADMIN_ID:
-                safe_send(ADMIN_ID, f"👤 دخول: {name} (شقة {apt}) يتصفح البوابة.")
+            if ADMIN_ID: safe_send(ADMIN_ID, f"👤 **دخول:** {name} (شقة {apt}) يتصفح البوابة الآن.")
             st.session_state.admin_notified = True
 
         st.success(f"أهلاً بك سيد: {name} (شقة {apt})")
 
-        # --- 4. الحسابات المالية ---
+        # --- 4. حالة الربط وزر التفعيل ---
+        st.subheader("🔔 حالة التنبيهات")
+        if not tg_id or str(tg_id).lower() in ["none", ""]:
+            st.warning("⚠️ حسابك غير مربوط بتلغرام. لن تصلك إشعارات الدفع.")
+            try:
+                bot_user = bot.get_me().username
+                st.link_button("🚀 تفعيل التنبيهات الآن", f"https://t.me/{bot_user}?start={apt}")
+            except: st.error("البوت غير متاح حالياً.")
+        else:
+            st.info(f"✅ خدمة التنبيهات مفعلة على حسابك (ID: {tg_id})")
+
+        # --- 5. المالية والإنذارات ---
+        st.divider()
         c_docs = db.collection("cotisations").stream()
         df_cont = pd.DataFrame([d.to_dict() for d in c_docs])
         total = pd.to_numeric(df_cont[df_cont['Appart'] == int(apt)]['Montant'], errors='coerce').sum()
@@ -86,39 +96,26 @@ if phone:
         diff = relativedelta(datetime.now(), valid_date)
         months_late = diff.months + (12 * diff.years)
 
-        st.divider()
         col1, col2 = st.columns(2)
-        col1.metric("وضعية مسواة إلى غاية", valid_date.strftime('%d/%m/%Y'))
-        col2.metric("إجمالي المدفوعات", f"{total:,.0f} DA")
+        col1.metric("مسوى إلى غاية", valid_date.strftime('%d/%m/%Y'))
+        col2.metric("إجمالي الدفع", f"{total:,.0f} DA")
 
-        # --- 5. نظام التنبيهات (المحمي بـ safe_send) ---
-        if tg_id and datetime.now() > valid_date:
-            if 'alert_sent' not in st.session_state:
-                if months_late >= 2:
-                    warn_msg = (f"🚨 **إنذار نهائي - شقة {apt}**\n\nلديكم تأخر {months_late} أشهر.\n"
-                                f"في حالة عدم التسوية خلال 48 ساعة، سيتم فصل مفاتيحكم آلياً.")
-                    if safe_send(tg_id, warn_msg):
-                        if ADMIN_ID: safe_send(ADMIN_ID, f"📢 إنذار قطع مرسل لشقة {apt}.")
-                        
-                        def final_cutoff():
-                            safe_send(tg_id, f"🚫 **تنبيه إداري: شقة {apt}**\n\nانتهت المهلة. تم فصل المفاتيح.")
-                        threading.Timer(172800, final_cutoff).start()
-                    else:
-                        st.error("⚠️ لم نتمكن من إرسال إنذار التلغرام. هل قمت بحظر البوت؟")
-
-                elif months_late >= 1:
-                    warn_msg = f"⚠️ **تذكير - شقة {apt}**\n\nتأخرتم بشهر واحد. يرجى تسوية الوضعية."
-                    safe_send(tg_id, warn_msg)
-                    if ADMIN_ID: safe_send(ADMIN_ID, f"📢 تذكير مرسل لشقة {apt}.")
-                
-                st.session_state.alert_sent = True
-
-        # زر الربط
-        if not tg_id or str(tg_id).lower() in ["none", ""]:
-            try:
-                bot_info = bot.get_me()
-                st.link_button("🚀 تفعيل تنبيهات تلغرام", f"https://t.me/{bot_info.username}?start={apt}")
-            except: pass
+        # إرسال التنبيهات (مرة واحدة في الجلسة)
+        if tg_id and datetime.now() > valid_date and 'alert_sent' not in st.session_state:
+            if months_late >= 2:
+                warn_msg = (f"🚨 **إنذار نهائي - شقة {apt}**\n\nلديكم تأخر {months_late} أشهر.\n"
+                            f"في حالة عدم التسوية خلال 48 ساعة، سيتم فصل مفاتيحكم آلياً.")
+                if safe_send(tg_id, warn_msg):
+                    if ADMIN_ID: safe_send(ADMIN_ID, f"📢 **إنذار قطع مرسل:** شقة {apt} متأخرة بـ {months_late} شهر.")
+                    def cutoff(): safe_send(tg_id, f"🚫 **تنبيه:** انتهت المهلة، تم فصل مفاتيح الشقة {apt}.")
+                    threading.Timer(172800, cutoff).start()
+            
+            elif months_late >= 1:
+                warn_msg = f"⚠️ **تذكير - شقة {apt}**\n\nتأخرتم بشهر واحد. يرجى تسوية الوضعية."
+                if safe_send(tg_id, warn_msg):
+                    if ADMIN_ID: safe_send(ADMIN_ID, f"📢 **تذكير مرسل:** شقة {apt} متأخرة بشهر.")
+            
+            st.session_state.alert_sent = True
 
         # سجل الدفعات
         apt_pays = df_cont[df_cont['Appart'] == int(apt)]
