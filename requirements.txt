@@ -6,3 +6,5 @@ arabic-reshaper
 python-bidi
 python-dateutil
 requests
+pyTelegramBotAPI
+python-dateutil
