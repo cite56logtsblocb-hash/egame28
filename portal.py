@@ -5,6 +5,7 @@ import telebot
 import threading
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+import telebot
 
 # --- 1. إعدادات البوت والقاعدة (من Secrets) ---
 TOKEN = st.secrets["TELEGRAM_TOKEN"]
