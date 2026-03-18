@@ -53,7 +53,7 @@ if 'bot_thread' not in st.session_state:
 
 # --- 3. واجهة البوابة ---
 st.set_page_config(page_title="Portal Bloc B", page_icon="🏢")
-st.title("🏢 بوابة سكان Bloc B")
+st.title("🏢 بوابة السكان Bloc B")
 
 phone = st.text_input("أدخل رقم هاتفك المسجل:")
 
@@ -85,7 +85,6 @@ if phone:
                 bot_username = bot.get_me().username
                 # زر الربط السحري
                 st.link_button("🚀 ربط حسابي وتفعيل التنبيهات", f"https://t.me/{bot_username}?start={apt}")
-                st.info("💡 بعد الضغط، اختر 'Start' في تلغرام ليتم تفعيل حسابك آلياً.")
             except:
                 st.error("فشل الاتصال بالبوت، يرجى المحاولة لاحقاً.")
         else:
@@ -110,14 +109,14 @@ if phone:
         if tg_id and datetime.now() > valid_date and 'alert_sent' not in st.session_state:
             if months_late >= 2:
                 warn_msg = (f"🚨 **إنذار نهائي - شقة {apt}**\n\nلديكم تأخر {months_late} أشهر.\n"
-                            f"في حالة عدم التسوية خلال 48 ساعة، سيتم فصل مفاتيحكم آلياً.")
+                            f"في حالة عدم التسوية خلال 48 ساعة، سيتم فصل مفاتيحكم الالكترونية آلياً.")
                 if safe_send(tg_id, warn_msg):
                     if ADMIN_ID: safe_send(ADMIN_ID, f"📢 **إنذار قطع:** شقة {apt} متأخرة بـ {months_late} شهر.")
-                    def cutoff(): safe_send(tg_id, f"🚫 **تنبيه:** انتهت المهلة، تم فصل مفاتيح الشقة {apt}.")
+                    def cutoff(): safe_send(tg_id, f"🚫 **تنبيه:** انتهت المهلة، تم فصل مفاتيحكم الالكترونية الرجاء الإتصال بالإدارة {apt}.")
                     threading.Timer(172800, cutoff).start()
             
             elif months_late >= 1:
-                warn_msg = f"⚠️ **تذكير - شقة {apt}**\n\nتأخرتم بشهر واحد. يرجى تسوية الوضعية."
+                warn_msg = f"⚠️ **تذكير - شقة {apt}**\n\nلديكم تأخر بشهر واحد. يرجى تسوية الوضعية."
                 if safe_send(tg_id, warn_msg):
                     if ADMIN_ID: safe_send(ADMIN_ID, f"📢 **تذكير:** شقة {apt} متأخرة بشهر.")
             
