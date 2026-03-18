@@ -3,15 +3,14 @@ import pandas as pd
 from google.cloud import firestore
 import telebot
 import threading
+import time
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-import telebot
 
-# --- 1. إعدادات البوت والقاعدة (من Secrets) ---
+# 1. إعدادات البوت والقاعدة
 TOKEN = st.secrets["TELEGRAM_TOKEN"]
 bot = telebot.TeleBot(TOKEN)
 
-# اتصال Firestore
 if 'db' not in st.session_state:
     creds = dict(st.secrets["firebase_key"])
     if "private_key" in creds:
@@ -20,7 +19,7 @@ if 'db' not in st.session_state:
 
 db = st.session_state.db
 
-# --- 2. وظيفة البوت (تخدم في الخلفية) ---
+# 2. تشغيل البوت في الخلفية (Thread)
 def run_bot():
     @bot.message_handler(commands=['start'])
     def handle_start(message):
@@ -29,35 +28,25 @@ def run_bot():
             apt_num = args[1]
             chat_id = message.chat.id
             try:
-                # التحديث في Firestore
-                db.collection("habitants").document(str(apt_num)).update({
-                    "telegram_id": str(chat_id)
-                })
-                # رسالة الترحيب
-                bot.send_message(chat_id, f"✅ **تم الربط بنجاح!**\n\nمرحباً بك جارنا العزيز في شقة {apt_num}.\nستصلك كل التنبيهات هنا آلياً. 🏢")
+                db.collection("habitants").document(str(apt_num)).update({"telegram_id": str(chat_id)})
+                bot.send_message(chat_id, f"✅ تم ربط الشقة {apt_num} بنجاح!")
             except:
-                bot.send_message(chat_id, "⚠️ فشل الربط، تأكد من رقم الشقة في البوابة.")
-        else:
-            bot.send_message(message.chat.id, "مرحباً! يرجى الدخول عبر البوابة لتفعيل حسابك.")
-    
-    # تشغيل البوت بدون توقف البرنامج
+                pass
     bot.remove_webhook()
-    bot.polling(none_stop=True, interval=0)
+    bot.polling(none_stop=True)
 
-# تشغيل البوت في Thread منفصل لمرة واحدة فقط
 if 'bot_thread' not in st.session_state:
-    thread = threading.Thread(target=run_bot, daemon=True)
-    thread.start()
+    threading.Thread(target=run_bot, daemon=True).start()
     st.session_state.bot_thread = True
 
-# --- 3. واجهة البوابة (Streamlit) ---
+# 3. واجهة البوابة
 st.set_page_config(page_title="Portal Bloc B", page_icon="🏢")
-
 st.title("🏢 بوابة سكان Bloc B")
-phone = st.text_input("أدخل رقم هاتفك المسجل:", placeholder="0XXXXXXXXX")
+
+phone = st.text_input("رقم الهاتف المسجل:")
 
 if phone:
-    # جلب البيانات
+    # جلب البيانات بدون Cache للتأكد من التحديث اللحظي
     h_docs = db.collection("habitants").stream()
     df_h = pd.DataFrame([d.to_dict() for d in h_docs])
     user = df_h[df_h['Tel'].astype(str).str.strip() == phone.strip()]
@@ -67,28 +56,30 @@ if phone:
         apt = str(res['Appart'])
         tg_id = res.get('telegram_id')
 
-        st.success(f"أهلاً بك سيد: {res.get('Nom', 'جارنا')} (شقة {apt})")
-        st.divider()
+        st.success(f"مرحباً بك شقة {apt}")
+        
+        # --- تعديل منطق الزر ---
+        bot_info = bot.get_me()
+        link = f"https://t.me/{bot_info.username}?start={apt}"
 
-        # زر الربط (الجسر)
-        if not tg_id:
-            st.warning("🔔 حسابك غير مربوط بتلغرام")
-            bot_name = bot.get_me().username
-            link = f"https://t.me/{bot_name}?start={apt}"
+        if not tg_id or str(tg_id).lower() in ["none", ""]:
+            st.warning("🔔 حسابك غير مربوط")
             st.link_button("🚀 تفعيل التنبيهات الآن", link)
         else:
-            st.info(f"✅ خدمة التنبيهات مفعلة (ID: {tg_id})")
+            st.info(f"✅ الإشعارات مفعلة (ID: {tg_id})")
+            # اختيار إضافي: زر لإعادة الربط في حال غير الساكن حسابه
+            with st.expander("تغيير حساب التلغرام؟"):
+                st.link_button("إعادة الربط بحساب جديد", link)
 
-        # عرض المالية
+        # عرض الحالة المالية
         c_docs = db.collection("cotisations").stream()
         df_c = pd.DataFrame([d.to_dict() for d in c_docs])
-        apt_pays = df_c[df_c['Appart'] == int(apt)] if not df_c.empty else pd.DataFrame()
-        total = pd.to_numeric(apt_pays['Montant'], errors='coerce').sum()
-        
+        total = pd.to_numeric(df_c[df_c['Appart'] == int(apt)]['Montant'], errors='coerce').sum()
         valid_date = datetime(2026, 1, 1) + relativedelta(months=int(total // 1000)) - pd.Timedelta(days=1)
         
-        c1, c2 = st.columns(2)
-        c1.metric("مسوى إلى غاية", valid_date.strftime('%d/%m/%Y'))
-        c2.metric("إجمالي الدفع", f"{total:,.0f} DA")
+        st.divider()
+        col1, col2 = st.columns(2)
+        col1.metric("مغطى إلى غاية", valid_date.strftime('%d/%m/%Y'))
+        col2.metric("المجموع", f"{total:,.0f} DA")
     else:
-        st.error("❌ الرقم غير مسجل.")
+        st.error("الرقم غير مسجل.")
