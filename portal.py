@@ -23,13 +23,28 @@ if 'db' not in st.session_state:
 
 db = st.session_state.db
 
-# دالة إرسال آمنة
 def safe_send(chat_id, message):
     if not chat_id: return False
     try:
         bot.send_message(chat_id, message, parse_mode="Markdown")
         return True
-    except: return False
+    except Exception as e:
+        st.error(f"فشل إرسال التلغرام: {e}") 
+        return False
+
+def notify_payment_success(apt_num, amount):
+    try:
+        user_doc = db.collection("habitants").document(str(apt_num)).get()
+        if user_doc.exists:
+            tg_id = user_doc.to_dict().get('telegram_id')
+            if tg_id:
+                text = (f"✨ **تأكيد استلام دفع**\n\n"
+                        f"مرحباً بك جارنا العزيز، نؤكد لكم استلام مبلغ **{amount:,.0f} DA** "
+                        f"الخاص بمستحقات الشقة رقم **{apt_num}**.\n\n"
+                        f"شكراً لتفهمكم ومساهمتكم في صيانة عمارتنا 🤝")
+                bot.send_message(tg_id, text, parse_mode="Markdown")
+    except Exception as e:
+        print(f"Error: {e}")
 
 # --- 2. محرك البوت (الخلفية) ---
 def run_bot():
@@ -40,9 +55,12 @@ def run_bot():
             apt_num = args[1]
             try:
                 db.collection("habitants").document(str(apt_num)).update({"telegram_id": str(message.chat.id)})
-                safe_send(message.chat.id, f"✅ **تم الربط بنجاح!**\nمرحباً بك في شقة {apt_num}. ستصلك التنبيهات هنا.")
+                msg = (f"🌟 **مرحباً بك جارنا العزيز**\n\n"
+                       f"لقد تم ربط حسابك ببوابة العمارة بنجاح لشقتكم رقم **({apt_num})**.\n\n"
+                       f"من الآن فصاعداً، ستصلكم هنا تنبيهات الاستحقاق، تأكيدات الدفع، وأهم إعلانات لجنة العمارة. 🏢✨")
+                safe_send(message.chat.id, msg)
                 if ADMIN_ID:
-                    safe_send(ADMIN_ID, f"🔔 **ربط جديد:** الشقة {apt_num} قامت بتفعيل التلغرام.")
+                    safe_send(ADMIN_ID, f"🔔 **ربط جديد:** الشقة {apt_num} فعلت التلغرام.")
             except: pass
     bot.remove_webhook()
     bot.polling(none_stop=True)
@@ -53,79 +71,196 @@ if 'bot_thread' not in st.session_state:
 
 # --- 3. واجهة البوابة ---
 st.set_page_config(page_title="Portal Bloc B", page_icon="🏢")
-st.title("🏢 بوابة السكان Bloc B")
+st.markdown(
+    """
+    <style>
+    .hero-card {
+        background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%);
+        border-radius: 14px;
+        padding: 1.1rem 1.3rem;
+        color: white;
+        margin-bottom: 1rem;
+        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.2);
+    }
+    .hero-title {
+        font-size: 1.4rem;
+        font-weight: 800;
+        margin-bottom: 0.25rem;
+    }
+    .hero-subtitle {
+        font-size: 0.95rem;
+        opacity: 0.92;
+    }
+    .section-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 0.9rem 1rem;
+        background: #ffffff;
+        box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+    }
+    .metric-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 0.9rem 1rem;
+        background: #f8fafc;
+        margin-bottom: 0.4rem;
+    }
+    .metric-label {
+        font-size: 0.92rem;
+        color: #475569;
+        font-weight: 600;
+    }
+    .metric-value-big {
+        font-size: 1.95rem;
+        font-weight: 800;
+        color: #1d4ed8;
+        margin-top: 0.1rem;
+    }
+    .metric-value {
+        font-size: 1.2rem;
+        font-weight: 700;
+        margin-top: 0.1rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+st.markdown(
+    """
+    <div class="hero-card">
+        <div class="hero-title">🏢 بوابة السكان Bloc B</div>
+        <div class="hero-subtitle">متابعة الوضعية المالية، التنبيهات، وآخر الدفعات بشكل واضح واحترافي.</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-phone = st.text_input("أدخل رقم هاتفك المسجل:")
+st.markdown(
+    """
+    <div class="section-card">
+        <div style="font-size: 0.95rem; font-weight: 700; color: #0f172a; margin-bottom: 0.35rem;">
+            📱 ضع رقمك هنا في البوابة
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+phone = st.text_input(
+    "رقم الهاتف",
+    placeholder="مثال: 0555123456",
+    label_visibility="collapsed",
+)
 
 if phone:
-    h_docs = db.collection("habitants").stream()
-    df_hab = pd.DataFrame([d.to_dict() for d in h_docs])
-    user_match = df_hab[df_hab['Tel'].astype(str).str.strip() == phone.strip()]
+        h_docs = db.collection("habitants").stream()
+        df_hab = pd.DataFrame([d.to_dict() for d in h_docs])
+        user_match = df_hab[df_hab['Tel'].astype(str).str.strip() == phone.strip()]
 
-    if not user_match.empty:
-        res = user_match.iloc[0]
-        apt = str(res['Appart'])
-        name = res.get('Nom', 'جارنا العزيز')
-        tg_id = res.get('telegram_id')
+        if not user_match.empty:
+            res = user_match.iloc[0]
+            apt = str(res['Appart'])
+            name = res.get('Nom', 'جارنا العزيز')
+            tg_id = res.get('telegram_id')
 
-        # إشعار دخول للأدمن
-        if 'admin_notified' not in st.session_state:
-            if ADMIN_ID: safe_send(ADMIN_ID, f"👤 **دخول:** {name} (شقة {apt}) يتصفح البوابة الآن.")
-            st.session_state.admin_notified = True
+            if 'admin_notified' not in st.session_state:
+                if ADMIN_ID: safe_send(ADMIN_ID, f"👤 **دخول:** {name} (شقة {apt})")
+                st.session_state.admin_notified = True
 
-        st.success(f"أهلاً بك سيد: {name} (شقة {apt})")
+            st.markdown(
+                f"""
+                <div class="section-card" style="margin-top: 0.6rem;">
+                    <div style="font-size: 1rem; font-weight: 700; color: #0f172a;">👋 أهلاً بك: {name}</div>
+                    <div style="font-size: 0.95rem; color: #475569;">رقم الشقة: <b>{apt}</b></div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-        # --- 4. الجزء الذي طلبته: زر الربط وحالة الـ ID ---
-        st.subheader("🔔 خدمة التنبيهات")
-        
-        # التأكد إذا كان الـ ID موجود أو فارغ
-        if not tg_id or str(tg_id).strip() in ["", "None", "nan"]:
-            st.warning("⚠️ حسابك غير مرتبط بتطبيق التلغرام.")
+            # --- 4. خدمة التنبيهات ---
+            st.subheader("🔔 خدمة التنبيهات")
+            if not tg_id or str(tg_id).strip() in ["", "None", "nan"]:
+                st.warning("⚠️ حسابك غير مرتبط بالتنبيهات.")
+                try:
+                    bot_username = bot.get_me().username
+                    st.link_button("🚀 تفعيل التنبيهات عبر تلغرام", f"https://t.me/{bot_username}?start={apt}")
+                except: st.error("فشل الاتصال بالبوت.")
+            else:
+                st.success(f"✅ خدمة التنبيهات مفعلة.")
+
+            # --- 5. المالية والإنذارات ---
+            st.divider()
             try:
-                bot_username = bot.get_me().username
-                # زر الربط السحري
-                st.link_button("🚀 ربط حسابي وتفعيل التنبيهات", f"https://t.me/{bot_username}?start={apt}")
-            except:
-                st.error("فشل الاتصال بالبوت، يرجى المحاولة لاحقاً.")
+                c_docs = db.collection("cotisations").stream()
+                df_cont = pd.DataFrame([d.to_dict() for d in c_docs])
+                total = pd.to_numeric(df_cont[df_cont['Appart'] == int(apt)]['Montant'], errors='coerce').sum()
+                tarif_mensuel = 1000
+                now = datetime.now()
+                mois_theoriques = max(0, (now.year - 2026) * 12 + (now.month - 1))
+                montant_theorique = mois_theoriques * tarif_mensuel
+                dette_override = res.get("DetteOverride", pd.NA)
+                dette_precedente = float(dette_override) if not pd.isna(dette_override) else 0.0
+                dette_actuelle = max(0, (montant_theorique + dette_precedente) - float(total))
+                
+                valid_date = datetime(2026, 1, 1) + relativedelta(months=int(total // 1000)) - pd.Timedelta(days=1)
+                diff = relativedelta(datetime.now(), valid_date)
+                months_late = diff.months + (12 * diff.years)
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown(
+                        f"""
+                        <div class="metric-card">
+                            <div class="metric-label">📆 مسوى إلى غاية</div>
+                            <div class="metric-value-big">{valid_date.strftime('%d/%m/%Y')}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                with col2:
+                    st.markdown(
+                        f"""
+                        <div class="metric-card">
+                            <div class="metric-label">💳 الدين المسجل عليه</div>
+                            <div class="metric-value" style="color: {'#b91c1c' if dette_actuelle > 0 else '#15803d'};">
+                                {dette_actuelle:,.0f} DA
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+                if tg_id and datetime.now() > valid_date and 'alert_sent' not in st.session_state:
+                    if months_late >= 3:
+                        warn_msg = (f"📢 **تذكير هام - شقة {apt}**\n\n"
+                                    f"جارنا المحترم، سجل النظام تأخراً في تسوية المستحقات لمدة **{months_late} أشهر**.\n\n"
+                                    f"يرجى التفضل بتسوية الوضعية لتفادي التوقف الآلي للخدمات الإلكترونية (المصعد) "
+                                    f"خلال 48 ساعة. نحن هنا لخدمتكم. 🙏")
+                        
+                        if safe_send(tg_id, warn_msg):
+                            def cutoff(): 
+                                msg_cutoff = (f"⏳ **تنبيه بخصوص الخدمات**\n\n"
+                                             f"جارنا العزيز في الشقة {apt}، نظراً لانتهاء المهلة المحددة وعدم تسوية المساهمات، "
+                                             f"يؤسفنا إبلاغكم بأن النظام أوقف تفعيل المفاتيح الإلكترونية للمصعد آلياً.\n\n"
+                                             f"يرجى التواصل مع الإدارة لاستعادة الخدمة فوراً. شكراً لتفهمكم.")
+                                safe_send(tg_id, msg_cutoff)
+                            threading.Timer(172800, cutoff).start()
+                    
+                    elif months_late >= 1:
+                        warn_msg = (f"👋 **تذكير ودي - شقة {apt}**\n\n"
+                                    f"نحيطكم علماً بأن مستحقات العمارة متأخرة بـ {months_late} شهر.\n"
+                                    f"نرجو منكم المساهمة في أقرب وقت لضمان استمرار جودة الخدمات. شكراً لك!")
+                        safe_send(tg_id, warn_msg)
+                    
+                    st.session_state.alert_sent = True
+
+            except Exception as e:
+                st.error(f"خطأ: {e}")
+
+            apt_pays = df_cont[df_cont['Appart'] == int(apt)]
+            if not apt_pays.empty:
+                st.subheader("📋 سجل الدفعات")
+                latest_pays = apt_pays[['Date', 'Montant']].sort_values('Date', ascending=False).head(5).copy()
+                latest_pays['Montant'] = pd.to_numeric(latest_pays['Montant'], errors='coerce').fillna(0).map(lambda x: f"{x:,.0f} DA")
+                st.dataframe(latest_pays, use_container_width=True, hide_index=True)
         else:
-            # إذا كان الـ ID موجود
-            st.success(f"✅ حسابك مرتبط بالتطبيق بنجاح (المعرف: {tg_id})")
-
-        # --- 5. المالية والإنذارات ---
-        st.divider()
-        c_docs = db.collection("cotisations").stream()
-        df_cont = pd.DataFrame([d.to_dict() for d in c_docs])
-        total = pd.to_numeric(df_cont[df_cont['Appart'] == int(apt)]['Montant'], errors='coerce').sum()
-        
-        valid_date = datetime(2026, 1, 1) + relativedelta(months=int(total // 1000)) - pd.Timedelta(days=1)
-        diff = relativedelta(datetime.now(), valid_date)
-        months_late = diff.months + (12 * diff.years)
-
-        col1, col2 = st.columns(2)
-        col1.metric("مسوى إلى غاية", valid_date.strftime('%d/%m/%Y'))
-        col2.metric("إجمالي الدفع", f"{total:,.0f} DA")
-
-        # إرسال التنبيهات آلياً
-        if tg_id and datetime.now() > valid_date and 'alert_sent' not in st.session_state:
-            if months_late >= 2:
-                warn_msg = (f"🚨 **إنذار نهائي - شقة {apt}**\n\nلديكم تأخر {months_late} أشهر.\n"
-                            f"في حالة عدم التسوية خلال 48 ساعة، سيتم فصل مفاتيحكم الالكترونية آلياً.")
-                if safe_send(tg_id, warn_msg):
-                    if ADMIN_ID: safe_send(ADMIN_ID, f"📢 **إنذار قطع:** شقة {apt} متأخرة بـ {months_late} شهر.")
-                    def cutoff(): safe_send(tg_id, f"🚫 **تنبيه:** انتهت المهلة، تم فصل مفاتيحكم الالكترونية الرجاء الإتصال بالإدارة {apt}.")
-                    threading.Timer(172800, cutoff).start()
-            
-            elif months_late >= 1:
-                warn_msg = f"⚠️ **تذكير - شقة {apt}**\n\nلديكم تأخر بشهر واحد. يرجى تسوية الوضعية."
-                if safe_send(tg_id, warn_msg):
-                    if ADMIN_ID: safe_send(ADMIN_ID, f"📢 **تذكير:** شقة {apt} متأخرة بشهر.")
-            
-            st.session_state.alert_sent = True
-
-        # سجل الدفعات
-        apt_pays = df_cont[df_cont['Appart'] == int(apt)]
-        if not apt_pays.empty:
-            st.subheader("📋 سجل الدفعات الأخيرة")
-            st.table(apt_pays[['Date', 'Montant']].sort_values('Date', ascending=False).head(5))
-    else:
-        st.error("❌ الرقم غير مسجل.")
+            st.error("❌ الرقم غير مسجل.")
