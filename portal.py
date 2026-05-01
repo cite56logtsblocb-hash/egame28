@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from google.cloud import firestore
 import telebot
+import time
 import threading
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
@@ -22,15 +23,6 @@ if 'db' not in st.session_state:
         st.stop()
 
 db = st.session_state.db
-
-def safe_send(chat_id, message):
-    if not chat_id: return False
-    try:
-        bot.send_message(chat_id, message, parse_mode="Markdown")
-        return True
-    except Exception as e:
-        st.error(f"فشل إرسال التلغرام: {e}") 
-        return False
 
 def notify_payment_success(apt_num, amount):
     try:
@@ -69,6 +61,73 @@ if 'bot_thread' not in st.session_state:
     threading.Thread(target=run_bot, daemon=True).start()
     st.session_state.bot_thread = True
 
+# --- دالة الإرسال المطورة ---
+def safe_send(chat_id, message, apt_info=""):
+    """ترسل الرسالة للساكن وترسل نسخة للأدمن آلياً"""
+    if not chat_id: return False
+    try:
+        # إرسال للساكن
+        bot.send_message(chat_id, message, parse_mode="Markdown")
+        
+        # إعلام الأدمن (أنت) بكل صغيرة وكبيرة
+        if ADMIN_ID and str(chat_id) != str(ADMIN_ID):
+            report = f"📤 **تقرير الإرسال الآلي:**\n"
+            if apt_info: report += f"🏠 الشقة: {apt_info}\n"
+            report += f"--- الرسالة المرسلة ---\n{message}"
+            bot.send_message(ADMIN_ID, report, parse_mode="Markdown")
+            
+        return True
+    except Exception as e:
+        # إذا فشل الإرسال للساكن، أعلم الأدمن بالخطأ
+        if ADMIN_ID:
+            bot.send_message(ADMIN_ID, f"❌ فشل الإرسال لشقة {apt_info}\nالخطأ: {e}")
+        return False
+
+# --- محرك الأتمتة المحدث ---
+def automated_monthly_check():
+    while True:
+        try:
+            now = datetime.now()
+            current_month = now.strftime("%Y-%m")
+            h_docs = db.collection("habitants").stream()
+            c_docs = db.collection("cotisations").stream()
+            df_cont = pd.DataFrame([d.to_dict() for d in c_docs])
+            
+            for doc in h_docs:
+                res = doc.to_dict()
+                apt = str(res.get('Appart'))
+                tg_id = res.get('telegram_id')
+                last_sent = res.get('last_notice_month', "")
+
+                # حساب المستحقات
+                total = pd.to_numeric(df_cont[df_cont['Appart'] == int(apt)]['Montant'], errors='coerce').sum()
+                valid_date = datetime(2026, 1, 1) + relativedelta(months=int(total // 1000)) - pd.Timedelta(days=1)
+                diff = relativedelta(now, valid_date)
+                months_late = diff.months + (12 * diff.years)
+
+                # شرط الإرسال
+                if tg_id and now > valid_date and last_sent != current_month:
+                    if months_late >= 3:
+                        msg = (f"📢 **إنذار نهائي - شقة {apt}**\n\n"
+                               f"تأخر في الدفع لمدة {months_late} أشهر. "
+                               f"سيتم توقف المصعد آلياً بعد 48 ساعة.")
+                        # نمرر رقم الشقة لـ safe_send لكي يعلم الأدمن من استلم
+                        if safe_send(tg_id, msg, apt_info=apt):
+                            db.collection("habitants").document(apt).update({"last_notice_month": current_month})
+                            
+                    elif months_late >= 1:
+                        msg = f"👋 **تذكير ودي - شقة {apt}**\nالمستحقات متأخرة بـ {months_late} شهر."
+                        if safe_send(tg_id, msg, apt_info=apt):
+                            db.collection("habitants").document(apt).update({"last_notice_month": current_month})
+        except Exception as e:
+            if ADMIN_ID: bot.send_message(ADMIN_ID, f"⚠️ خطأ تقني: {e}")
+            
+        time.sleep(86400) # فحص كل يوم
+
+if 'auto_run' not in st.session_state:
+    t = threading.Thread(target=automated_monthly_check, daemon=True)
+    t.start()
+    st.session_state.auto_run = True
 # --- 3. واجهة البوابة ---
 st.set_page_config(page_title="Portal Bloc B", page_icon="🏢")
 st.markdown(
@@ -228,30 +287,6 @@ if phone:
                         """,
                         unsafe_allow_html=True,
                     )
-
-                if tg_id and datetime.now() > valid_date and 'alert_sent' not in st.session_state:
-                    if months_late >= 3:
-                        warn_msg = (f"📢 **تذكير هام - شقة {apt}**\n\n"
-                                    f"جارنا المحترم، سجل النظام تأخراً في تسوية المستحقات لمدة **{months_late} أشهر**.\n\n"
-                                    f"يرجى التفضل بتسوية الوضعية لتفادي التوقف الآلي للخدمات الإلكترونية (المصعد) "
-                                    f"خلال 48 ساعة. نحن هنا لخدمتكم. 🙏")
-                        
-                        if safe_send(tg_id, warn_msg):
-                            def cutoff(): 
-                                msg_cutoff = (f"⏳ **تنبيه بخصوص الخدمات**\n\n"
-                                             f"جارنا العزيز في الشقة {apt}، نظراً لانتهاء المهلة المحددة وعدم تسوية المساهمات، "
-                                             f"يؤسفنا إبلاغكم بأن النظام أوقف تفعيل المفاتيح الإلكترونية للمصعد آلياً.\n\n"
-                                             f"يرجى التواصل مع الإدارة لاستعادة الخدمة فوراً. شكراً لتفهمكم.")
-                                safe_send(tg_id, msg_cutoff)
-                            threading.Timer(172800, cutoff).start()
-                    
-                    elif months_late >= 1:
-                        warn_msg = (f"👋 **تذكير ودي - شقة {apt}**\n\n"
-                                    f"نحيطكم علماً بأن مستحقات العمارة متأخرة بـ {months_late} شهر.\n"
-                                    f"نرجو منكم المساهمة في أقرب وقت لضمان استمرار جودة الخدمات. شكراً لك!")
-                        safe_send(tg_id, warn_msg)
-                    
-                    st.session_state.alert_sent = True
 
             except Exception as e:
                 st.error(f"خطأ: {e}")
