@@ -317,3 +317,5 @@ if phone:
             st.dataframe(latest_pays, use_container_width=True, hide_index=True)
     else:
         st.error("❌ عذراً، رقم الهاتف هذا غير مسجل في قاعدة بيانات الساكنين.")
+
+st.empty()
