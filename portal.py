@@ -13,7 +13,7 @@ st.set_page_config(page_title="Portal Bloc B", page_icon="🏢")
 # --- 2. الإعدادات والاتصال بقاعدة البيانات ---
 TOKEN = st.secrets["TELEGRAM_TOKEN"]
 ADMIN_ID = st.secrets.get("CHAT_ID")
-GROUP_CHAT_ID = -3869677102
+GROUP_CHAT_ID = -3869677102  # تأكد من أن البوت أدمن في هذه المجموعة
 bot = telebot.TeleBot(TOKEN)
 
 if 'db' not in st.session_state:
@@ -40,7 +40,6 @@ def get_treasurer_id():
         pass
     return None
 
-
 # --- 3. دالة الإرسال الآمن وآليات البوت والإشعارات المتعددة ---
 def safe_send(chat_id, message, apt_info=""):
     if not chat_id: return False
@@ -66,7 +65,6 @@ def run_bot():
                        f"من الآن فصاعداً، ستصلكم هنا تنبيهات الاستحقاق، تأكيدات الدفع، وأهم إعلانات لجنة العمارة. 🏢✨")
                 safe_send(message.chat.id, msg, apt_info=str(apt_num))
                 
-                # إشعار إضافي إذا كان الرابط شقة 27 أمين المال
                 if str(apt_num) == "27":
                     safe_send(message.chat.id, "👑 أهلاً بك بصفتك **أمين المال** للعمارة، ستصلك الآن تقارير الدفع والمصاريف آلياً هنا.")
                 
@@ -94,16 +92,25 @@ def automated_monthly_check():
             c_docs = db.collection("cotisations").stream()
             df_cont = pd.DataFrame([d.to_dict() for d in c_docs])
             
-            all_debtors = [] 
+            all_debtors = []
+            unregistered_apts = [] # قائمة لتخزين الشقق التي لم تفعل البوت
 
             for doc in h_docs:
                 res = doc.to_dict()
                 apt = str(res.get('Appart'))
                 tg_id = res.get('telegram_id')
+                tg_username = res.get('telegram_username', '') # لو كان مسجل في قاعدة البيانات
                 last_sent = res.get('last_notice_month', "")
                 is_resident = bool(res.get("Resident", True))
                 
-                # حساب الديون (المنطق تاعك)
+                # فحص تفعيل التلغرام
+                if is_resident and (not tg_id or str(tg_id).strip() in ["", "None", "nan"]):
+                    if tg_username:
+                        unregistered_apts.append(f"شقة {apt} ({tg_username})")
+                    else:
+                        unregistered_apts.append(f"شقة {apt}")
+
+                # حساب الديون
                 sy_val = res.get("StartYear")
                 sm_val = res.get("StartMonth")
                 s_y = 2026 if pd.isna(sy_val) else int(sy_val)
@@ -133,21 +140,38 @@ def automated_monthly_check():
             config = config_ref.get().to_dict() or {}
             
             if now.day == 1 and config.get("last_group_report") != current_month:
+                # 1. إرسال تقرير الديون المعلقة
                 if all_debtors:
                     report_msg = f"📋 **قائمة الديون المعلقة - {now.strftime('%m/%Y')}**\n"
                     report_msg += "________________________\n\n"
                     report_msg += "\n".join(all_debtors)
                     report_msg += "\n\n⚠️ يرجى تسوية المستحقات. شكراً."
+                    safe_send(GROUP_CHAT_ID, report_msg)
+                
+                # 2. إرسال تنبيه للسكان غير المفعلين للبوت
+                if unregistered_apts:
+                    try:
+                        bot_user = bot.get_me().username
+                        bot_link = f"https://t.me/{bot_user}"
+                    except:
+                        bot_link = "يرجى طلب الرابط من أمين المال"
+
+                    rem_msg = f"📢 **تذكير هام لجميع جيراننا في Bloc B** 📢\n\n"
+                    rem_msg += "يرجى من أصحاب الشقق التالية الدخول لبوابة السكان وتفعيل التنبيهات لرؤية كشف الحساب واستلام الوصولات:\n\n"
+                    rem_msg += " | ".join(unregistered_apts)
+                    rem_msg += f"\n\n👉 **رابط البوت المباشر للتفعيل:**\n{bot_link}"
                     
-                    if safe_send(GROUP_CHAT_ID, report_msg):
-                        config_ref.set({"last_group_report": current_month}, merge=True)
+                    safe_send(GROUP_CHAT_ID, rem_msg)
+
+                # تحديث حالة الإرسال في الإعدادات
+                config_ref.set({"last_group_report": current_month}, merge=True)
 
         except Exception as e:
             if ADMIN_ID:
                 try: bot.send_message(ADMIN_ID, f"⚠️ خطأ في سكريبت الأتمتة: {e}")
                 except: pass
         
-        time.sleep(3600) # فحص كل ساعة
+        time.sleep(3600)
 
 if 'auto_run' not in st.session_state:
     threading.Thread(target=automated_monthly_check, daemon=True).start()
@@ -233,6 +257,7 @@ if phone:
         )
 
         st.subheader("🔔 خدمة التنبيهات التلغرام")
+        # التحقق من تفعيل التلغرام (هنا الحجب)
         if not tg_id or str(tg_id).strip() in ["", "None", "nan"]:
             st.warning("⚠️ حسابك غير مرتبط ببوت التنبيهات الحالي.")
             try:
@@ -240,6 +265,10 @@ if phone:
                 st.link_button("🚀 تفعيل التنبيهات واستلام الوصولات عبر تلغرام", f"https://t.me/{bot_username}?start={apt}")
             except:
                 st.error("فشل الاتصال بالبوت، يرجى المحاولة لاحقاً.")
+            
+            # إيقاف عرض باقي الصفحة للمستخدمين غير المفعلين
+            st.info("🔒 تم إخفاء تفاصيل الحساب مؤقتاً. يرجى تفعيل التنبيهات عبر الرابط أعلاه لفتح البوابة ورؤية وضعيتك المالية.")
+            st.stop() 
         else:
             st.success(f"✅ خدمة التنبيهات مفعلة ومرتبطة بحسابك الشخصي.")
 
@@ -266,13 +295,11 @@ if phone:
             
             valid_date = datetime(s_y, s_m, 1) + relativedelta(months=int(total // 1000)) - pd.Timedelta(days=1)
 
-            # --- التعديل: حساب مصاريف الشهر الحالي فقط بدلاً من الإجمالي ---
-            current_month_prefix = now.strftime("%Y-%m") # جلب السنة والشهر الحالي مثلاً '2026-05'
+            current_month_prefix = now.strftime("%Y-%m")
             try:
                 exp_docs = db.collection("depenses").stream()
                 df_exp = pd.DataFrame([d.to_dict() for d in exp_docs])
                 if not df_exp.empty and 'Date' in df_exp.columns and 'Montant' in df_exp.columns:
-                    # تحويل قيم المبالغ لأرقام وتصفية التواريخ حسب الشهر الحالي فقط
                     df_exp['Montant'] = pd.to_numeric(df_exp['Montant'], errors='coerce').fillna(0)
                     monthly_exp_df = df_exp[df_exp['Date'].astype(str).str.startswith(current_month_prefix)]
                     monthly_expenses = monthly_exp_df['Montant'].sum()
@@ -305,7 +332,6 @@ if phone:
                     unsafe_allow_html=True,
                 )
                 
-            
         except Exception as e:
             st.error(f"خطأ في معالجة الحسابات المالية: {e}")
 
@@ -317,5 +343,3 @@ if phone:
             st.dataframe(latest_pays, use_container_width=True, hide_index=True)
     else:
         st.error("❌ عذراً، رقم الهاتف هذا غير مسجل في قاعدة بيانات الساكنين.")
-
-st.empty()
